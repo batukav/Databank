@@ -18,15 +18,23 @@ import json
 import os
 
 import numpy as np
-import yaml
 
-import DatabankLib.quality as qq
 from DatabankLib import NMLDB_EXP_PATH, NMLDB_SIMU_PATH
+from DatabankLib.experiment import FFExperiment, OPExperiment
 from DatabankLib.jsonEncoders import CompactJSONEncoder
+from DatabankLib.quality import (
+    formfactorQuality,
+    fragmentQuality,
+    fragmentQualityAvg,
+    get_fragments,
+    loadSimulations,
+    prob_S_in_g,
+    systemQuality,
+)
 
 
 def evaluate_quality():
-    simulations = qq.loadSimulations()
+    simulations = loadSimulations()
 
     EvaluatedOPs = 0
     EvaluatedFFs = 0
@@ -65,23 +73,18 @@ def evaluate_quality():
                 # get readme file of the experiment
                 exp_fpath = os.path.join(NMLDB_EXP_PATH, "OrderParameters", path)
                 print("Experimental data available at " + exp_fpath)
+                exp_id = os.path.basename(path)
 
-                READMEfilepathExperiment = os.path.join(exp_fpath, "README.yaml")
-                experiment = qq.Experiment()
-                with open(READMEfilepathExperiment) as yaml_file_exp:
-                    readme_exp = yaml.load(yaml_file_exp, Loader=yaml.FullLoader)
-                    experiment.readme = readme_exp
-
-                exp_op_fpath = os.path.join(exp_fpath, lipid1 + "_Order_Parameters.json")
-                exp_op_data = {}
                 try:
-                    with open(exp_op_fpath) as json_file:
-                        exp_op_data = json.load(json_file)
+                    experiment = OPExperiment(exp_id, exp_fpath)
                 except FileNotFoundError:
-                    print(f"Experimental order parameter data do not exist for lipid {lipid1}.")
+                    print(f"Could not load experiment {exp_id} at {exp_fpath}")
                     continue
-                except Exception as e:
-                    raise RuntimeError(f"Unexpected error during loading {exp_op_fpath}") from e
+
+                exp_op_data = experiment.data.get(lipid1)
+                if not exp_op_data:
+                    print(f"Experimental order parameter data do not exist for lipid {lipid1} in {exp_id}.")
+                    continue
 
                 exp_error = 0.02
 
@@ -97,7 +100,7 @@ def evaluate_quality():
                             op_sim_STEM = OP_array[2]
                             # changing to use shitness(TM) scale.
                             # This code needs to be cleaned
-                            op_quality = qq.prob_S_in_g(OP_exp, exp_error, OP_sim, op_sim_STEM)
+                            op_quality = prob_S_in_g(OP_exp, exp_error, OP_sim, op_sim_STEM)
                             OP_array.append(OP_exp)
                             OP_array.append(exp_error)  # hardcoded!!! 0.02 for all exps
                             OP_array.append(op_quality)
@@ -107,11 +110,11 @@ def evaluate_quality():
                 data_dict[doi] = OP_qual_data
 
                 # calculate quality for molecule fragments headgroup, sn-1, sn-2
-                fragments = qq.get_fragments(simulation.system.content[lipid1].mapping_dict)
-                fragment_qual_dict[doi] = qq.fragmentQuality(fragments, exp_op_data, OP_data_lipid)
+                fragments = get_fragments(simulation.system.content[lipid1].mapping_dict)
+                fragment_qual_dict[doi] = fragmentQuality(fragments, exp_op_data, OP_data_lipid)
 
             try:
-                fragment_quality_output = qq.fragmentQualityAvg(lipid1, fragment_qual_dict, fragments)
+                fragment_quality_output = fragmentQualityAvg(lipid1, fragment_qual_dict, fragments)
             except Exception:
                 print("no fragment quality")
                 fragment_quality_output = {}
@@ -144,7 +147,7 @@ def evaluate_quality():
             except Exception:
                 pass
 
-        system_qual_output = qq.systemQuality(system_quality, simulation)
+        system_qual_output = systemQuality(system_quality, simulation)
         # make system quality file
 
         outfile2 = os.path.join(DATAdir, "SYSTEM_quality.json")
@@ -164,19 +167,20 @@ def evaluate_quality():
 
         expFFpath = simulation.system["EXPERIMENT"]["FORMFACTOR"]
         expFFdata = {}
-        if len(expFFpath) > 0:
-            expFFpath_full = os.path.join(NMLDB_EXP_PATH, "FormFactors", expFFpath)
-            for _, _, files in os.walk(expFFpath_full):
-                for filename in files:
-                    filepath = os.path.join(expFFpath_full, filename)
-                    if filename.endswith(".json"):
-                        with open(filepath) as json_file:
-                            expFFdata = json.load(json_file)
+        if expFFpath:
+            exp_fpath = os.path.join(NMLDB_EXP_PATH, "FormFactors", expFFpath)
+            exp_id = os.path.basename(expFFpath)
+            try:
+                experiment = FFExperiment(exp_id, exp_fpath)
+                expFFdata = experiment.data
+            except FileNotFoundError:
+                print(f"Could not load experiment {exp_id} at {exp_fpath}")
+                expFFdata = {}
 
         simFFdata = simulation.ff_data
 
-        if len(expFFpath) > 0 and len(simFFdata) > 0:
-            ffQuality = qq.formfactorQuality(simFFdata, expFFdata)
+        if expFFpath and simFFdata:
+            ffQuality = formfactorQuality(simFFdata, expFFdata)
             outfile3 = os.path.join(DATAdir, "FormFactorQuality.json")
             with open(outfile3, "w") as f:
                 json.dump(ffQuality, f)

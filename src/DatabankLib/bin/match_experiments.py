@@ -26,6 +26,7 @@ from tqdm import tqdm
 from DatabankLib import NMLDB_EXP_PATH, NMLDB_SIMU_PATH
 from DatabankLib.core import System, initialize_databank
 from DatabankLib.databankLibrary import lipids_set
+from DatabankLib.experiment import Experiment, ExperimentCollection, FFExperiment, OPExperiment
 
 logger = logging.getLogger("__name__")
 
@@ -107,34 +108,6 @@ class SearchSystem:
 ##################
 
 
-class Experiment:
-    def __init__(self, readme: dict, molname: str, data_path: str, exptype: str):
-        self.readme = readme
-        self.molname = molname  # <- the dictionary about existence of data files
-        self.dataPath = data_path  # .... for particular lipids
-        self.exptype = exptype
-
-    def get_lipids(self, molecules=lipids_set) -> list[str]:
-        lipids = [k for k in self.readme["MOLAR_FRACTIONS"] if k in molecules]
-        return lipids
-
-    def get_ions(self, ions) -> list[str]:
-        exp_ions: list[str] = []
-
-        for key in ions:
-            try:
-                if self.readme["ION_CONCENTRATIONS"][key] != 0:
-                    exp_ions.append(key)
-            except KeyError:
-                continue
-            try:
-                if key in self.readme["COUNTER_IONS"]:
-                    exp_ions.append(key)
-            except (TypeError, KeyError):
-                continue
-        return exp_ions
-
-
 def load_simulations() -> list[SearchSystem]:
     """
     Generates the list of Simulation objects. Go through all README.yaml files.
@@ -155,51 +128,6 @@ def load_simulations() -> list[SearchSystem]:
     return simulations
 
 
-def load_experiments(exp_type: str) -> list[Experiment]:
-    """
-    Loops over the experiment entries in the experiment databank and read experiment
-    readme and order parameter files into objects.
-    """
-    if exp_type == "OrderParameters":
-        data_file = "_Order_Parameters.json"
-    elif exp_type == "FormFactors":
-        data_file = "_FormFactor.json"
-    else:
-        raise NotImplementedError("Only OrderParameters and FormFactors types are implemented.")
-
-    print("Build experiments [%s] index..." % exp_type, end="")
-    rm_idx = []
-
-    path = os.path.join(NMLDB_EXP_PATH, exp_type)
-    for subdir, _, files in os.walk(path):
-        for fn in files:
-            if fn == "README.yaml":
-                rm_idx.append(subdir)
-    print("%d READMEs loaded." % len(rm_idx))
-
-    print("Loading data for each experiment.")
-    experiments: list[Experiment] = []
-    for subdir in tqdm(rm_idx, desc="Experiment"):
-        try:
-            exp_readme_fp = os.path.join(subdir, "README.yaml")
-            with open(exp_readme_fp) as yaml_file_exp:
-                exp_readme = yaml.load(yaml_file_exp, Loader=yaml.FullLoader)
-        except (FileNotFoundError, PermissionError):
-            logger.warning(f"Problems while accessing README.yaml in: {subdir}")
-            continue
-
-        for fname in os.listdir(subdir):
-            if fname.endswith(data_file):
-                molecule_name = ""
-                if exp_type == "OrderParameters":
-                    molecule_name = fname.replace(data_file, "")
-                elif exp_type == "FormFactors":
-                    molecule_name = "system"
-                experiments.append(Experiment(exp_readme, molecule_name, subdir, exp_type))
-
-    return experiments
-
-
 def find_pairs(experiments: list[Experiment], simulations: list[SearchSystem]):
     pairs = []
     for simulation in tqdm(simulations, desc="Simulation"):
@@ -215,11 +143,11 @@ def find_pairs(experiments: list[Experiment], simulations: list[SearchSystem]):
 
         for experiment in experiments:
             # check lipid composition matches the simulation
-            exp_lipids = experiment.get_lipids()
+            exp_lipids = experiment.get_lipids(lipids_set)
 
-            exp_total_lipid_concentration = experiment.readme["TOTAL_LIPID_CONCENTRATION"]
+            exp_total_lipid_concentration = experiment["TOTAL_LIPID_CONCENTRATION"]
             exp_ions = experiment.get_ions(ions_list)
-            exp_counter_ions = experiment.readme["COUNTER_IONS"]
+            exp_counter_ions = experiment["COUNTER_IONS"]
 
             # calculate simulation ion concentrations
             sim_concentrations = {}
@@ -231,8 +159,8 @@ def find_pairs(experiments: list[Experiment], simulations: list[SearchSystem]):
                 # compare molar fractions
                 mf_ok = 0
                 for key in sim_lipids:
-                    if (experiment.readme["MOLAR_FRACTIONS"][key] >= sim_molar_fractions[key] - 0.03) and (
-                        experiment.readme["MOLAR_FRACTIONS"][key] <= sim_molar_fractions[key] + 0.03
+                    if (experiment["MOLAR_FRACTIONS"][key] >= sim_molar_fractions[key] - 0.03) and (
+                        experiment["MOLAR_FRACTIONS"][key] <= sim_molar_fractions[key] + 0.03
                     ):
                         mf_ok += 1
 
@@ -240,8 +168,8 @@ def find_pairs(experiments: list[Experiment], simulations: list[SearchSystem]):
                 c_ok = 0
                 if set(sim_ions) == set(exp_ions):
                     for key in sim_ions:
-                        if (experiment.readme["ION_CONCENTRATIONS"][key] >= sim_concentrations[key] - 0.05) and (
-                            experiment.readme["ION_CONCENTRATIONS"][key] <= sim_concentrations[key] + 0.05
+                        if (experiment["ION_CONCENTRATIONS"][key] >= sim_concentrations[key] - 0.05) and (
+                            experiment["ION_CONCENTRATIONS"][key] <= sim_concentrations[key] + 0.05
                         ):
                             c_ok += 1
 
@@ -261,7 +189,7 @@ def find_pairs(experiments: list[Experiment], simulations: list[SearchSystem]):
 
                 if switch:
                     # check temperature +/- 2 degrees
-                    t_exp = experiment.readme["TEMPERATURE"]
+                    t_exp = experiment["TEMPERATURE"]
 
                     if (
                         (mf_ok == len(sim_lipids))
@@ -274,15 +202,19 @@ def find_pairs(experiments: list[Experiment], simulations: list[SearchSystem]):
 
                         # Add path to experiment into simulation README.yaml
                         # many experiment entries can match to same simulation
-                        exp_doi = experiment.readme["DOI"]
-                        exp_path = os.path.relpath(
-                            experiment.dataPath,
-                            start=os.path.join(NMLDB_EXP_PATH, experiment.exptype),
-                        )
-                        if experiment.exptype == "OrderParameters":
-                            lipid = experiment.molname
-                            simulation.system["EXPERIMENT"]["ORDERPARAMETER"][lipid][exp_doi] = exp_path
-                        elif experiment.exptype == "FormFactors":
+                        exp_doi = experiment["DOI"]
+
+                        if isinstance(experiment, OPExperiment):
+                            exp_path = os.path.relpath(
+                                experiment._get_path(), start=os.path.join(NMLDB_EXP_PATH, "OrderParameters")
+                            )
+                            for lipid in experiment.data.keys():
+                                if lipid in sim_lipids:
+                                    simulation.system["EXPERIMENT"]["ORDERPARAMETER"][lipid][exp_doi] = exp_path
+                        elif isinstance(experiment, FFExperiment):
+                            exp_path = os.path.relpath(
+                                experiment._get_path(), start=os.path.join(NMLDB_EXP_PATH, "FormFactors")
+                            )
                             simulation.system["EXPERIMENT"]["FORMFACTOR"] = exp_path
                     else:
                         continue
@@ -319,8 +251,8 @@ def log_pairs(pairs, fd: IO[str]) -> None:
         sysn = sim.system["SYSTEM"]
         simp = sim.idx_path
 
-        expp = exp.dataPath
-        expd = exp.readme["DOI"]
+        expp = exp._get_path()
+        expd = exp["DOI"]
 
         fd.write(f"""
 --------------------------------------------------------------------------------
@@ -355,8 +287,11 @@ def match_experiments():
         with open(readme_path, "w") as f:
             yaml.dump(simulation.system.readme, f, sort_keys=False, allow_unicode=True)
 
-    experiments_op = load_experiments("OrderParameters")
-    experiments_ff = load_experiments("FormFactors")
+    print("Loading experiments...")
+    all_experiments = ExperimentCollection.load_from_data()
+    experiments_op = [exp for exp in all_experiments if isinstance(exp, OPExperiment)]
+    experiments_ff = [exp for exp in all_experiments if isinstance(exp, FFExperiment)]
+    print(f"{len(all_experiments)} experiments loaded.")
 
     # Pair each simulation with an experiment with the closest matching temperature
     # and composition

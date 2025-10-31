@@ -38,10 +38,6 @@ class QualSimulation:
         return number / sum(map(sum, all_counts))
 
 
-class Experiment:
-    pass
-
-
 # ------------------------------------
 
 

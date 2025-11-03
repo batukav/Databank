@@ -15,6 +15,142 @@ import yaml
 from DatabankLib import NMLDB_EXP_PATH
 
 
+class Experiment(ABC):
+    """
+    Abstract base class representing an experimental dataset in the databank.
+
+    This class provides an interface for interacting with experiment-related
+    files, which are stored in a dedicated folder within the databank's
+    `Experiments` directory. It handles loading metadata and provides
+    access to the experiment's properties.
+    """
+
+    _exp_id: str
+    _metadata: dict | None = None
+    _data: dict | None = None
+
+    def __init__(self, exp_id: str, path: str):
+        """
+        Initialize the Experiment object.
+
+        :param exp_id: The unique identifier for the experiment, which also
+                       corresponds to its directory name.
+        :param path: The absolute path to the experiment's directory.
+        """
+        self._exp_id = exp_id
+        self._path = path
+        self._populate_meta_data()
+
+    def _get_path(self) -> str:
+        """
+        Return the absolute path to the experiment's directory.
+
+        :return: The path to the experiment's data folder.
+        """
+        return self._path
+
+    def _populate_meta_data(self) -> None:
+        """
+        Populate metadata for the experiment from its README.yaml file.
+
+        This method loads the `README.yaml` file from the experiment's
+        directory. If the file is not found, it raises a FileNotFoundError.
+        """
+        self._metadata = {}
+        meta_path = os.path.join(self._get_path(), "README.yaml")
+        if os.path.isfile(meta_path):
+            with open(meta_path) as yaml_file:
+                self._metadata = yaml.load(yaml_file, Loader=yaml.FullLoader)
+        else:
+            msg = f"Metadata file (README.yaml) not found for experiment '{self._exp_id}'."
+            raise FileNotFoundError(msg)
+
+    @property
+    def metadata(self) -> dict:
+        """
+        Provides access to the experiment's metadata.
+
+        :return: A dictionary containing the metadata from the README.yaml file.
+        """
+        if self._metadata is None:
+            self._populate_meta_data()
+        return self._metadata
+
+    @property
+    def exp_id(self) -> str:
+        """The unique identifier of the experiment."""
+        return self._exp_id
+
+    @property
+    @abstractmethod
+    def data(self) -> dict:
+        """Provide access to the experiment's data."""
+
+    @property
+    @abstractmethod
+    def schema(self) -> str:
+        """Path to the JSON schema for validation."""
+
+    def __getitem__(self, key: str):
+        """Allow dictionary-style access to the metadata."""
+        return self.metadata[key]
+
+    def __repr__(self):
+        return f"{type(self).__name__}(id='{self.exp_id}')"
+
+    def __eq__(self, other):
+        return isinstance(other, type(self)) and self.exp_id == other.exp_id
+
+    def __hash__(self):
+        return hash(self.exp_id)
+
+class OPExperiment(Experiment):
+    """
+    Represents an order parameter experiment.
+    """
+
+    _schema_path = "path/to/op_schema.json"  # Placeholder
+
+    @property
+    def data(self) -> dict:
+        if self._data is None:
+            self._data = {}
+            for fname in os.listdir(self._get_path()):
+                if fname.endswith("_Order_Parameters.json"):
+                    molecule_name = fname.replace("_Order_Parameters.json", "")
+                    fpath = os.path.join(self._get_path(), fname)
+                    with open(fpath) as json_file:
+                        self._data[molecule_name] = json.load(json_file)
+        return self._data
+
+    @property
+    def schema(self) -> str:
+        return self._schema_path
+
+
+class FFExperiment(Experiment):
+    """
+    Represents a form factor experiment.
+    """
+
+    _schema_path = "path/to/ff_schema.json"  # Placeholder
+
+    @property
+    def data(self) -> dict:
+        if self._data is None:
+            self._data = {}
+            for fname in os.listdir(self._get_path()):
+                if fname.endswith("_FormFactor.json"):
+                    fpath = os.path.join(self._get_path(), fname)
+                    with open(fpath) as json_file:
+                        self._data = json.load(json_file)
+                    break  # Assuming one form factor file per experiment
+        return self._data
+
+    @property
+    def schema(self) -> str:
+        return self._schema_path
+
 class Collection(MutableSet, ABC):
     """Set repeating normal set functionality with some additional molecule-specific things."""
 
@@ -64,7 +200,7 @@ class Collection(MutableSet, ABC):
         """
         if self._test_item_type(item):
             self._items.add(item)
-            self._ids.add(item.id.upper())
+            self._ids.add(item.exp_id.upper())
         elif isinstance(item, str):
             self._items.add(self._create_item(item))  # here we call Lipid constructor
             self._ids.add(item.upper())
@@ -109,182 +245,6 @@ class Collection(MutableSet, ABC):
     def ids(self) -> set[str]:
         return self._ids
 
-
-class Experiment(ABC):
-    """
-    Abstract base class representing an experimental dataset in the databank.
-
-    This class provides an interface for interacting with experiment-related
-    files, which are stored in a dedicated folder within the databank's
-    `Experiments` directory. It handles loading metadata and provides
-    access to the experiment's properties.
-    """
-
-    _exp_id: str
-    _metadata: dict | None = None
-    _data: dict | None = None
-
-    def __init__(self, exp_id: str, path: str):
-        """
-        Initializes the Experiment object.
-
-        :param exp_id: The unique identifier for the experiment, which also
-                       corresponds to its directory name.
-        :param path: The absolute path to the experiment's directory.
-        """
-        self._exp_id = exp_id
-        self._path = path
-        self._populate_meta_data()
-
-    def _get_path(self) -> str:
-        """
-        Return the absolute path to the experiment's directory.
-
-        :return: The path to the experiment's data folder.
-        """
-        return self._path
-
-    def _populate_meta_data(self) -> None:
-        """
-        Populate metadata for the experiment from its README.yaml file.
-
-        This method loads the `README.yaml` file from the experiment's
-        directory. If the file is not found, it raises a FileNotFoundError.
-        """
-        self._metadata = {}
-        meta_path = os.path.join(self._get_path(), "README.yaml")
-        if os.path.isfile(meta_path):
-            with open(meta_path) as yaml_file:
-                self._metadata = yaml.load(yaml_file, Loader=yaml.FullLoader)
-        else:
-            raise FileNotFoundError(f"Metadata file (README.yaml) not found for experiment '{self._exp_id}'.")
-
-    @property
-    def metadata(self) -> dict:
-        """
-        Provides access to the experiment's metadata.
-
-        :return: A dictionary containing the metadata from the README.yaml file.
-        """
-        if self._metadata is None:
-            self._populate_meta_data()
-        return self._metadata
-
-    @property
-    def id(self) -> str:
-        """
-        The unique identifier of the experiment.
-        """
-        return self._exp_id
-
-    @property
-    @abstractmethod
-    def data(self) -> dict:
-        """
-        Provides access to the experiment's data.
-        """
-
-    @property
-    @abstractmethod
-    def schema(self) -> str:
-        """
-        Path to the JSON schema for validation.
-        """
-
-    def __getitem__(self, key: str):
-        """
-        Allows dictionary-style access to the metadata.
-        """
-        return self.metadata[key]
-
-    def __repr__(self):
-        return f"{type(self).__name__}(id='{self.id}')"
-
-    def __eq__(self, other):
-        return isinstance(other, type(self)) and self.id.upper() == other.id.upper()
-
-    def __hash__(self):
-        return hash(self.id.upper())
-
-    def get_lipids(self, molecules: set) -> list[str]:
-        """
-        Get lipids from the experiment's metadata.
-
-        :param molecules: A set of molecule names to filter against.
-        :return: A list of lipid names.
-        """
-        return [k for k in self.metadata.get("MOLAR_FRACTIONS", {}) if k in molecules]
-
-    def get_ions(self, ions: list) -> list[str]:
-        """
-        Get ions from the experiment's metadata.
-
-        :param ions: A list of ion names to check for.
-        :return: A list of ion names present in the experiment.
-        """
-        exp_ions: list[str] = []
-        for key in ions:
-            try:
-                if self.metadata.get("ION_CONCENTRATIONS", {}).get(key, 0) != 0:
-                    exp_ions.append(key)
-            except KeyError:
-                continue
-            try:
-                if key in self.metadata.get("COUNTER_IONS", []):
-                    exp_ions.append(key)
-            except (TypeError, KeyError):
-                continue
-        return exp_ions
-
-
-class OPExperiment(Experiment):
-    """
-    Represents an order parameter experiment.
-    """
-
-    _schema_path = "path/to/op_schema.json"  # Placeholder
-
-    @property
-    def data(self) -> dict:
-        if self._data is None:
-            self._data = {}
-            for fname in os.listdir(self._get_path()):
-                if fname.endswith("_Order_Parameters.json"):
-                    molecule_name = fname.replace("_Order_Parameters.json", "")
-                    fpath = os.path.join(self._get_path(), fname)
-                    with open(fpath) as json_file:
-                        self._data[molecule_name] = json.load(json_file)
-        return self._data
-
-    @property
-    def schema(self) -> str:
-        return self._schema_path
-
-
-class FFExperiment(Experiment):
-    """
-    Represents a form factor experiment.
-    """
-
-    _schema_path = "path/to/ff_schema.json"  # Placeholder
-
-    @property
-    def data(self) -> dict:
-        if self._data is None:
-            self._data = {}
-            for fname in os.listdir(self._get_path()):
-                if fname.endswith("_FormFactor.json"):
-                    fpath = os.path.join(self._get_path(), fname)
-                    with open(fpath) as json_file:
-                        self._data = json.load(json_file)
-                    break  # Assuming one form factor file per experiment
-        return self._data
-
-    @property
-    def schema(self) -> str:
-        return self._schema_path
-
-
 class ExperimentCollection(Collection):
     """
     A collection of experiments.
@@ -299,7 +259,7 @@ class ExperimentCollection(Collection):
     @staticmethod
     def load_from_data() -> "ExperimentCollection":
         """
-        Loads experiment data from the designated directory and returns a set of experiments.
+        Load experiment data from the designated directory and returns a set of experiments.
         """
         collection = ExperimentCollection()
         for exp_type, exp_cls in [("OrderParameters", OPExperiment), ("FormFactors", FFExperiment)]:
@@ -316,3 +276,16 @@ class ExperimentCollection(Collection):
                         # Log this error?
                         pass
         return collection
+
+    def loc(self, exp_id: str) -> Experiment:
+        """
+        Locate an experiment by its path-ID.
+
+        :param path-id: ????.
+        :return: The Experiment object if found, else None.
+        """
+        for exp in self:
+            if exp.expt_id == exp_id:
+                return exp
+        msg = f"Experiment with path-ID '{exp_id}' not found in the collection."
+        raise KeyError(msg)

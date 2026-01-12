@@ -109,7 +109,7 @@ class OPExperiment(Experiment):
     Represents an order parameter experiment.
     """
 
-    _schema_path = "path/to/op_schema.json"  # Placeholder
+    _schema_path = "src/DatabankLib/SchemaValidation/Schema/op_schema.json"  # Placeholder
 
     @property
     def data(self) -> dict:

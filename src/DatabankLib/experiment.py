@@ -164,9 +164,13 @@ class FFExperiment(Experiment):
                     break  # Assuming one form factor file per experiment
         return self._data
 
-    @property
-    def schema(self) -> str:
-        return self._schema_path
+    def transform_data(self) -> Any:
+        """
+        Placeholder for data transformation.
+
+        :return: The raw data.
+        """
+        return self.data
 
 class Collection(MutableSet, ABC):
     """Set repeating normal set functionality with some additional molecule-specific things."""

@@ -150,7 +150,7 @@ class FFExperiment(Experiment):
     Represents a form factor experiment.
     """
 
-    _schema_path = "path/to/ff_schema.json"  # Placeholder
+    _schema_path = "src/DatabankLib/SchemaValidation/Schema/ff_schema.json"  # Placeholder
 
     @property
     def data(self) -> dict:

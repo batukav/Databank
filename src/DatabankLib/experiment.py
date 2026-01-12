@@ -91,6 +91,10 @@ class Experiment(ABC):
     def schema(self) -> str:
         """Path to the JSON schema for validation."""
 
+    @abstractmethod
+    def transform_data(self) -> Any:
+        """Perform a data transformation."""
+
     def __getitem__(self, key: str):
         """Allow dictionary-style access to the metadata."""
         return self.metadata[key]

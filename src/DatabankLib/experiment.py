@@ -123,9 +123,26 @@ class OPExperiment(Experiment):
                         self._data[molecule_name] = json.load(json_file)
         return self._data
 
-    @property
-    def schema(self) -> str:
-        return self._schema_path
+    def transform_data(self) -> Any:
+        """
+        Calculates the average order parameter for each molecule.
+
+        :return: A dictionary with molecule names as keys and average order parameters as values.
+        """
+        transformed_data = {}
+        for molecule, data in self.data.items():
+            if not data:
+                continue
+            total_s = 0
+            count = 0
+            for atom_data in data.values():
+                if 'S' in atom_data:
+                    total_s += atom_data['S']
+                    count += 1
+            if count > 0:
+                transformed_data[molecule] = total_s / count
+        return transformed_data
+
 
 
 class FFExperiment(Experiment):

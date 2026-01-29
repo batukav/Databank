@@ -105,3 +105,5 @@ Please consult [CONTRIBUTION.md](./CONTRIBUTION.md) and [Data Contribution](http
 
 Do not hesitate contacting us via [databank@nmrlipids.fi](email:databank@nmrlipids.fi) if 
 you have any questions or inquiries!
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/batukav/Databank/blob/main/dielectric-profiles.ipynb)

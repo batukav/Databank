@@ -43,6 +43,10 @@ dependencies = [
     "requests",
     "scipy",
     "jsonschema",
+    "ipykernel>=7.1.0",
+    "matplotlib-inline>=0.2.1",
+    "leidenalg>=0.11.0",
+    "umap-learn>=0.5.11",
 ]
 requires-python = ">=3.10,<3.14"
 
